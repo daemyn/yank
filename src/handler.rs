@@ -11,6 +11,9 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum YankError {
+    #[error("No key provided")]
+    NoKeyProvided,
+
     #[error("Could not find home directory")]
     HomeDirNotFound,
 

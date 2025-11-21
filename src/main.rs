@@ -1,7 +1,7 @@
 use clap::Parser;
 use yank::{
     cli::{Cli, Commands},
-    handler::{Handler, Result},
+    handler::{Handler, Result, YankError},
 };
 
 fn main() {
@@ -24,7 +24,7 @@ fn run() -> Result<()> {
             if let Some(key) = cli.key {
                 handler.yank_value(&key)?;
             } else {
-                eprintln!("No key provided");
+                return Err(YankError::NoKeyProvided);
             }
         }
     }
