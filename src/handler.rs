@@ -2,10 +2,9 @@ use std::{
     fs,
     io::{self, ErrorKind},
     path::PathBuf,
-    time::{Duration, Instant},
 };
 
-use arboard::{Clipboard, SetExtLinux};
+use arboard::Clipboard;
 use serde_json::Value;
 use thiserror::Error;
 
@@ -129,12 +128,34 @@ impl Handler {
         let value = self.get_value(key)?;
         println!("{value}");
 
-        let mut clipboard = Clipboard::new()?;
+        // Linux-specific Wayland handling
+        #[cfg(target_os = "linux")]
+        {
+            let is_wayland = std::env::var("WAYLAND_DISPLAY").is_ok()
+                || std::env::var("XDG_SESSION_TYPE")
+                    .map(|v| v == "wayland")
+                    .unwrap_or(false);
 
-        clipboard
-            .set()
-            .wait_until(Instant::now() + Duration::from_millis(100))
-            .text(value)?;
+            if is_wayland {
+                use std::process::{Command, Stdio};
+                if let Ok(mut child) = Command::new("wl-copy").stdin(Stdio::piped()).spawn() {
+                    if let Some(stdin) = &mut child.stdin {
+                        use std::io::Write;
+
+                        stdin.write_all(value.as_bytes())?;
+                    }
+                    return Ok(());
+                }
+            }
+        }
+
+        // Fallback / default for:
+        // - Windows
+        // - macOS
+        // - Linux + X11
+        // - Linux + Wayland without wl-copy
+        let mut clipboard = Clipboard::new()?;
+        clipboard.set_text(value.to_owned())?;
 
         println!("Copied to clipboard!");
         Ok(())
