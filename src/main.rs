@@ -1,8 +1,5 @@
 use clap::Parser;
-use yank::{
-    cli::{Cli, Commands},
-    handler::{Handler, Result, YankError},
-};
+use yank::{Cli, Commands, Handler, Result, YankError};
 
 fn main() {
     if let Err(err) = run() {
