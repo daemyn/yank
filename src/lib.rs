@@ -13,7 +13,7 @@ use thiserror::Error;
 #[command(
     name = "yank",
     about = "A simple key-value clipboard manager",
-    override_usage = "yank <KEY>\n  or: yank <COMMAND> [ARGS]"
+    override_usage = "yank <KEY>\n   or: yank <COMMAND> [ARGS]"
 )]
 pub struct Cli {
     /// Key to yank (default action)
