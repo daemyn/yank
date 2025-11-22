@@ -2,9 +2,9 @@ use std::{
     fs,
     io::{self, ErrorKind},
     path::PathBuf,
+    process::Command,
 };
 
-use arboard::Clipboard;
 use clap::{Parser, Subcommand};
 use serde_json::Value;
 use thiserror::Error;
@@ -58,7 +58,7 @@ pub enum YankError {
     Json(#[from] serde_json::Error),
 
     #[error("Clipboard error: {0}")]
-    Clipboard(#[from] arboard::Error),
+    Clipboard(String),
 
     #[error("No value found for '{0}'")]
     KeyNotFound(String),
@@ -166,37 +166,81 @@ impl Handler {
     pub fn yank_value(&self, key: &str) -> Result<()> {
         let value = self.get_value(key)?;
 
-        // Linux-specific Wayland handling
-        #[cfg(target_os = "linux")]
-        {
-            let is_wayland = std::env::var("WAYLAND_DISPLAY").is_ok()
-                || std::env::var("XDG_SESSION_TYPE")
-                    .map(|v| v == "wayland")
-                    .unwrap_or(false);
-
-            if is_wayland {
-                use std::process::{Command, Stdio};
-                if let Ok(mut child) = Command::new("wl-copy").stdin(Stdio::piped()).spawn() {
-                    if let Some(stdin) = &mut child.stdin {
-                        use std::io::Write;
-
-                        stdin.write_all(value.as_bytes())?;
-                    }
-                    return Ok(());
-                }
-            }
-        }
-
-        // Fallback / default for:
-        // - Windows
-        // - macOS
-        // - Linux + X11
-        // - Linux + Wayland without wl-copy
-        let mut clipboard = Clipboard::new()?;
-        clipboard.set_text(value.to_owned())?;
+        self.copy_to_clipboard(&value)?;
 
         println!("{value}");
         println!("Copied to clipboard!");
         Ok(())
+    }
+
+    fn copy_to_clipboard(&self, text: &str) -> Result<()> {
+        if std::env::var("WAYLAND_DISPLAY").is_ok() {
+            if Command::new("wl-copy")
+                .arg(text)
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+            {
+                return Ok(());
+            }
+        }
+
+        if std::env::var("DISPLAY").is_ok() {
+            if Command::new("xclip")
+                .args(["-selection", "clipboard"])
+                .stdin(std::process::Stdio::piped())
+                .spawn()
+                .and_then(|mut child| {
+                    use std::io::Write;
+                    if let Some(stdin) = child.stdin.as_mut() {
+                        stdin.write_all(text.as_bytes())?;
+                    }
+                    child.wait()
+                })
+                .map(|s| s.success())
+                .unwrap_or(false)
+            {
+                return Ok(());
+            }
+
+            if Command::new("xsel")
+                .args(["--clipboard", "--input"])
+                .stdin(std::process::Stdio::piped())
+                .spawn()
+                .and_then(|mut child| {
+                    use std::io::Write;
+                    if let Some(stdin) = child.stdin.as_mut() {
+                        stdin.write_all(text.as_bytes())?;
+                    }
+                    child.wait()
+                })
+                .map(|s| s.success())
+                .unwrap_or(false)
+            {
+                return Ok(());
+            }
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            if Command::new("pbcopy")
+                .stdin(std::process::Stdio::piped())
+                .spawn()
+                .and_then(|mut child| {
+                    use std::io::Write;
+                    if let Some(stdin) = child.stdin.as_mut() {
+                        stdin.write_all(text.as_bytes())?;
+                    }
+                    child.wait()
+                })
+                .map(|s| s.success())
+                .unwrap_or(false)
+            {
+                return Ok(());
+            }
+        }
+
+        Err(YankError::Clipboard(
+        "No clipboard utility found. Please install wl-copy (Wayland), xclip/xsel (X11), or pbcopy (macOS)".to_string()))
     }
 }
